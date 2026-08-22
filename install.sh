@@ -98,10 +98,10 @@ configure_heroic_wrapper() {
 
       local tmp
       tmp="$(mktemp)"
-      jq --arg exe "$wrapper_path" --arg args "$wrapper_path" '
+      jq --arg exe "$wrapper_path" '
         with_entries(
-          if (.value | type) == "object" then
-            .value.wrapperOptions = {"exe": $exe, "args": $args}
+          if (.value | type) == "object" and (.value | has("wrapperOptions")) then
+            .value.wrapperOptions = [{"exe": $exe, "args": ""}]
           else . end
         )
       ' "$cfg_file" > "$tmp" && mv "$tmp" "$cfg_file"
