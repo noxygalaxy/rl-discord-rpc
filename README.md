@@ -5,7 +5,16 @@ official Stats API - no BakkesMod, no process injection, works fine
 alongside Easy Anti-Cheat. Shows playlist, live score, map thumbnail, and
 a best-effort rank badge via Tracker Network. Could be auto-launched with Rocket
 League through Heroic.</p>
-  <img src="assets/repo/preview.jpg">
+<table cellpadding="0" cellspacing="0" style="border-collapse: collapse; border: none;">
+  <tr>
+    <td style="padding: 0; margin: 0; border: none; vertical-align: top;">
+      <img src="assets/repo/preview.jpg" height="420" style="display: block; border-radius: 12px 0 0 12px; height: 420px; width: auto;">
+    </td>
+    <td style="padding: 0; margin: 0; border: none; vertical-align: top;">
+      <img src="assets/repo/preview-small.jpg" height="420" style="display: block; border-radius: 0 12px 12px 0; height: 420px; width: auto;">
+    </td>
+  </tr>
+</table>
 </div>
 
 ## Install
