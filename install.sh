@@ -42,6 +42,82 @@ latest_tag() {
     | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
 }
 
+find_heroic_config_dirs() {
+  local dirs=()
+  [ -d "$HOME/.config/heroic/GamesConfig" ] && dirs+=("$HOME/.config/heroic/GamesConfig")
+  [ -d "$HOME/.var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig" ] && \
+    dirs+=("$HOME/.var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig")
+  printf '%s\n' "${dirs[@]}"
+}
+
+find_rocket_league_config() {
+  local dir="$1"
+  local f
+  for f in "$dir"/*.json; do
+    [ -f "$f" ] || continue
+    if grep -qi "rocket" "$f" 2>/dev/null || \
+       grep -qi "RocketLeague" "$f" 2>/dev/null; then
+      echo "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+configure_heroic_wrapper() {
+  local wrapper_path="$1"
+  local ans
+
+  echo ""
+  prompt ans "Set up the Heroic Wrapper command for Rocket League automatically? [Y/n]: " "Y"
+  if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+    echo "Skipped. You can set it manually: Heroic -> Rocket League -> Settings ->"
+    echo "Advanced -> Wrapper command -> $wrapper_path"
+    return
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "WARNING: 'jq' is not installed, needed to safely edit Heroic's config JSON."
+    echo "Install it (e.g. 'sudo pacman -S jq') and re-run, or set the wrapper manually:"
+    echo "  Heroic -> Rocket League -> Settings -> Advanced -> Wrapper command -> $wrapper_path"
+    return
+  fi
+
+  local found_any=0
+  local dir cfg_file
+
+  while IFS= read -r dir; do
+    [ -z "$dir" ] && continue
+    if cfg_file=$(find_rocket_league_config "$dir"); then
+      found_any=1
+      echo "> Found Heroic game config: $cfg_file"
+
+      local backup="${cfg_file}.bak.$(date +%s)"
+      cp "$cfg_file" "$backup"
+      echo "  (backup saved to $backup)"
+
+      local tmp
+      tmp="$(mktemp)"
+      jq --arg exe "$wrapper_path" --arg args "$wrapper_path" '
+        with_entries(
+          if (.value | type) == "object" then
+            .value.wrapperOptions = {"exe": $exe, "args": $args}
+          else . end
+        )
+      ' "$cfg_file" > "$tmp" && mv "$tmp" "$cfg_file"
+
+      echo "  Wrapper command set to: $wrapper_path"
+    fi
+  done < <(find_heroic_config_dirs)
+
+  if [ "$found_any" -eq 0 ]; then
+    echo "WARNING: couldn't find a Rocket League entry in Heroic's GamesConfig."
+    echo "Make sure Rocket League has been launched at least once via Heroic already,"
+    echo "then run this script's 'configure' action again, or set the wrapper manually:"
+    echo "  Heroic -> Rocket League -> Settings -> Advanced -> Wrapper command -> $wrapper_path"
+  fi
+}
+
 enable_stats_api() {
   local port="$1"
   local ans prefix_path
@@ -144,6 +220,7 @@ do_install() {
   fi
 
   enable_stats_api "$stats_port"
+  configure_heroic_wrapper "$BIN_DIR/rl_rpc_wrapper"
 
   echo ""
   echo "Done. Installed:"
@@ -152,9 +229,6 @@ do_install() {
   echo "  $BIN_DIR/rl_discord_rpc    (symlink)"
   echo "  $BIN_DIR/rl_rpc_wrapper    (symlink)"
   echo "  $CONFIG_PATH"
-  echo ""
-  echo "Next step: in Heroic, Rocket League -> Settings -> Advanced -> Wrapper command ->"
-  echo "  $BIN_DIR/rl_rpc_wrapper"
   echo ""
   if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo "NOTE: $BIN_DIR is not in your PATH. Add this to your shell rc file:"
@@ -211,6 +285,7 @@ do_configure() {
   kill_running
   write_config
   enable_stats_api "$LAST_STATS_PORT"
+  configure_heroic_wrapper "$BIN_DIR/rl_rpc_wrapper"
   echo "Done. Restart rl_discord_rpc (or relaunch via Heroic) for changes to take effect."
 }
 
@@ -243,8 +318,9 @@ do_uninstall() {
   fi
 
   echo ""
-  echo "Uninstalled. Remember to remove the Wrapper command entry in Heroic"
-  echo "(Rocket League -> Settings -> Advanced -> Wrapper command) if you added one."
+  echo "Uninstalled. Remember to remove the Wrapper command entry in Heroic manually"
+  echo "if you had this script set it up (Rocket League -> Settings -> Advanced ->"
+  echo "Wrapper command)."
 }
 
 show_menu() {
