@@ -7,6 +7,10 @@ BIN_DIR="$HOME/.local/bin"
 CONFIG_PATH="$SHARE_DIR/config.json"
 DISCORD_CLIENT_ID="1540801470503329932"
 
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+  exec < /dev/tty
+fi
+
 kill_running() {
   pkill -9 -f rl_rpc_wrapper 2>/dev/null || true
   pkill -9 -f rl_discord_rpc 2>/dev/null || true
