@@ -7,9 +7,29 @@ BIN_DIR="$HOME/.local/bin"
 CONFIG_PATH="$SHARE_DIR/config.json"
 DISCORD_CLIENT_ID="1540801470503329932"
 
-if [ ! -t 0 ] && [ -r /dev/tty ]; then
-  exec < /dev/tty
+HAS_TTY=1
+if [ -t 0 ]; then
+  :
+elif [ -r /dev/tty ] && exec < /dev/tty 2>/dev/null; then
+  :
+else
+  HAS_TTY=0
+  echo "NOTE: no interactive terminal detected. Using defaults for all prompts."
+  echo "      Re-run with a real terminal attached to customize settings,"
+  echo "      or run '$0 configure' afterward to set them interactively."
 fi
+
+ask() {
+  local __resultvar="$1"
+  local __prompt="$2"
+  local __default="${3:-}"
+
+  if [ "$HAS_TTY" -eq 1 ]; then
+    read -rp "$__prompt" "$__resultvar"
+  else
+    printf -v "$__resultvar" '%s' "$__default"
+  fi
+}
 
 kill_running() {
   pkill -9 -f rl_rpc_wrapper 2>/dev/null || true
@@ -27,9 +47,15 @@ enable_stats_api() {
   local port="$1"
 
   echo ""
-  read -rp "Turn on the Rocket League Stats API now via this script? [Y/n]: " ans
+  ask ans "Turn on the Rocket League Stats API now via this script? [Y/n]: " "Y"
   if [[ ! "${ans:-Y}" =~ ^[Yy]$ ]]; then
     echo "Skipped. You can enable it manually later -- see the README."
+    return
+  fi
+
+  if [ "$HAS_TTY" -eq 0 ]; then
+    echo "Skipped (no terminal available to ask for your Proton prefix path)."
+    echo "Run '$0 configure' later from an interactive terminal to finish this step."
     return
   fi
 
@@ -140,10 +166,10 @@ do_install() {
 
 write_config() {
   echo "> Configuring rl_discord_rpc ..."
-  read -rp "Tracker Network platform [epic/steam/psn/xbl] (default: epic): " tracker_platform
+  ask tracker_platform "Tracker Network platform [epic/steam/psn/xbl] (default: epic): " "epic"
   tracker_platform="${tracker_platform:-epic}"
-  read -rp "Tracker Network username (e.g. your Epic display name): " tracker_username
-  read -rp "Stats API port (default: 49123): " stats_port
+  ask tracker_username "Tracker Network username (e.g. your Epic display name): " ""
+  ask stats_port "Stats API port (default: 49123): " "49123"
   stats_port="${stats_port:-49123}"
   LAST_STATS_PORT="$stats_port"
 
@@ -157,12 +183,16 @@ write_config() {
 }
 EOF
   echo "> Wrote $CONFIG_PATH"
+  if [ "$HAS_TTY" -eq 0 ]; then
+    echo "  (tracker_username left blank -- no terminal was available to ask."
+    echo "   Run '$0 configure' later to set it.)"
+  fi
 }
 
 do_configure() {
   if [ ! -d "$SHARE_DIR" ]; then
     echo "rl_discord_rpc doesn't appear to be installed yet ($SHARE_DIR not found)."
-    read -rp "Run install first? [Y/n]: " ans
+    ask ans "Run install first? [Y/n]: " "Y"
     if [[ "${ans:-Y}" =~ ^[Yy]$ ]]; then
       do_install
       return
@@ -175,7 +205,7 @@ do_configure() {
     echo "> Current config.json:"
     cat "$CONFIG_PATH"
     echo ""
-    read -rp "Overwrite with new values? [y/N]: " ans
+    ask ans "Overwrite with new values? [y/N]: " "N"
     if [[ ! "${ans:-N}" =~ ^[Yy]$ ]]; then
       echo "Cancelled."
       return
@@ -193,7 +223,7 @@ do_uninstall() {
   echo "  $SHARE_DIR"
   echo "  $BIN_DIR/rl_discord_rpc (symlink)"
   echo "  $BIN_DIR/rl_rpc_wrapper (symlink)"
-  read -rp "Are you sure? [y/N]: " ans
+  ask ans "Are you sure? [y/N]: " "N"
   if [[ ! "${ans:-N}" =~ ^[Yy]$ ]]; then
     echo "Cancelled."
     return
@@ -205,7 +235,7 @@ do_uninstall() {
   echo "> Removing symlinks ..."
   rm -f "$BIN_DIR/rl_discord_rpc" "$BIN_DIR/rl_rpc_wrapper"
 
-  read -rp "Also delete your config.json (Discord ID / Tracker username)? [y/N]: " ans2
+  ask ans2 "Also delete your config.json (Discord ID / Tracker username)? [y/N]: " "N"
   if [[ "${ans2:-N}" =~ ^[Yy]$ ]]; then
     echo "> Removing $SHARE_DIR entirely ..."
     rm -rf "$SHARE_DIR"
@@ -226,6 +256,14 @@ show_menu() {
   echo "2) Configure"
   echo "3) Uninstall"
   echo "4) Quit"
+
+  if [ "$HAS_TTY" -eq 0 ]; then
+    echo ""
+    echo "No terminal detected -- defaulting to Install."
+    do_install
+    return
+  fi
+
   read -rp "Choose an option [1-4]: " choice
   case "$choice" in
     1) do_install ;;
