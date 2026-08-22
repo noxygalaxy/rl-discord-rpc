@@ -1,34 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# script made by @noxygalaxy
+# feel free to review it, it has nothing dangerous
+
 REPO="noxygalaxy/rl-discord-rpc"
 SHARE_DIR="$HOME/.local/share/rl-discord-rpc"
 BIN_DIR="$HOME/.local/bin"
 CONFIG_PATH="$SHARE_DIR/config.json"
 DISCORD_CLIENT_ID="1540801470503329932"
 
-HAS_TTY=1
-if [ -t 0 ]; then
-  :
-elif [ -r /dev/tty ] && exec < /dev/tty 2>/dev/null; then
-  :
-else
-  HAS_TTY=0
-  echo "NOTE: no interactive terminal detected. Using defaults for all prompts."
-  echo "      Re-run with a real terminal attached to customize settings,"
-  echo "      or run '$0 configure' afterward to set them interactively."
-fi
-
-ask() {
+prompt() {
   local __resultvar="$1"
-  local __prompt="$2"
+  local __question="$2"
   local __default="${3:-}"
+  local __answer=""
 
-  if [ "$HAS_TTY" -eq 1 ]; then
-    read -rp "$__prompt" "$__resultvar"
+  if [[ -r /dev/tty ]]; then
+    read -rp "$__question" __answer < /dev/tty
   else
-    printf -v "$__resultvar" '%s' "$__default"
+    echo "$__question(no terminal available, using default: '${__default}')"
+    __answer=""
   fi
+
+  if [[ -z "$__answer" ]]; then
+    __answer="$__default"
+  fi
+
+  printf -v "$__resultvar" '%s' "$__answer"
 }
 
 kill_running() {
@@ -45,17 +44,12 @@ latest_tag() {
 
 enable_stats_api() {
   local port="$1"
+  local ans prefix_path
 
   echo ""
-  ask ans "Turn on the Rocket League Stats API now via this script? [Y/n]: " "Y"
-  if [[ ! "${ans:-Y}" =~ ^[Yy]$ ]]; then
+  prompt ans "Turn on the Rocket League Stats API now via this script? [Y/n]: " "Y"
+  if [[ ! "$ans" =~ ^[Yy]$ ]]; then
     echo "Skipped. You can enable it manually later -- see the README."
-    return
-  fi
-
-  if [ "$HAS_TTY" -eq 0 ]; then
-    echo "Skipped (no terminal available to ask for your Proton prefix path)."
-    echo "Run '$0 configure' later from an interactive terminal to finish this step."
     return
   fi
 
@@ -64,7 +58,7 @@ enable_stats_api() {
   echo "(In Heroic: click Rocket League -> the vertical dots menu ->"
   echo " \"Open Wine Prefix\" or \"Open Container Folder\" -- copy that path.)"
   echo ""
-  read -rp "Enter your Rocket League Proton prefix path: " prefix_path
+  prompt prefix_path "Enter your Rocket League Proton prefix path: " ""
 
   if [ -z "$prefix_path" ] || [ ! -d "$prefix_path" ]; then
     echo "WARNING: that path doesn't exist or wasn't provided. Skipping auto-configure."
@@ -121,7 +115,11 @@ do_install() {
   trap 'rm -rf "$tmp_dir"' RETURN
 
   echo "> Downloading ${asset} ..."
-  curl -fsSL "$url" -o "$tmp_dir/$asset"
+  if [[ -t 1 ]]; then
+    curl -fL --progress-bar "$url" -o "$tmp_dir/$asset"
+  else
+    curl -fsSL "$url" -o "$tmp_dir/$asset"
+  fi
 
   echo "> Extracting ..."
   tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
@@ -158,19 +156,19 @@ do_install() {
   echo "Next step: in Heroic, Rocket League -> Settings -> Advanced -> Wrapper command ->"
   echo "  $BIN_DIR/rl_rpc_wrapper"
   echo ""
-  if ! echo "$PATH" | grep -q "$BIN_DIR"; then
+  if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo "NOTE: $BIN_DIR is not in your PATH. Add this to your shell rc file:"
     echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
   fi
 }
 
 write_config() {
+  local tracker_platform tracker_username stats_port
+
   echo "> Configuring rl_discord_rpc ..."
-  ask tracker_platform "Tracker Network platform [epic/steam/psn/xbl] (default: epic): " "epic"
-  tracker_platform="${tracker_platform:-epic}"
-  ask tracker_username "Tracker Network username (e.g. your Epic display name): " ""
-  ask stats_port "Stats API port (default: 49123): " "49123"
-  stats_port="${stats_port:-49123}"
+  prompt tracker_platform "Tracker Network platform [epic/steam/psn/xbl] (default: epic): " "epic"
+  prompt tracker_username "Tracker Network username (e.g. your Epic display name): " ""
+  prompt stats_port "Stats API port (default: 49123): " "49123"
   LAST_STATS_PORT="$stats_port"
 
   mkdir -p "$SHARE_DIR"
@@ -183,17 +181,15 @@ write_config() {
 }
 EOF
   echo "> Wrote $CONFIG_PATH"
-  if [ "$HAS_TTY" -eq 0 ]; then
-    echo "  (tracker_username left blank -- no terminal was available to ask."
-    echo "   Run '$0 configure' later to set it.)"
-  fi
 }
 
 do_configure() {
+  local ans ans2
+
   if [ ! -d "$SHARE_DIR" ]; then
     echo "rl_discord_rpc doesn't appear to be installed yet ($SHARE_DIR not found)."
-    ask ans "Run install first? [Y/n]: " "Y"
-    if [[ "${ans:-Y}" =~ ^[Yy]$ ]]; then
+    prompt ans "Run install first? [Y/n]: " "Y"
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
       do_install
       return
     else
@@ -205,8 +201,8 @@ do_configure() {
     echo "> Current config.json:"
     cat "$CONFIG_PATH"
     echo ""
-    ask ans "Overwrite with new values? [y/N]: " "N"
-    if [[ ! "${ans:-N}" =~ ^[Yy]$ ]]; then
+    prompt ans2 "Overwrite with new values? [y/N]: " "N"
+    if [[ ! "$ans2" =~ ^[Yy]$ ]]; then
       echo "Cancelled."
       return
     fi
@@ -219,12 +215,14 @@ do_configure() {
 }
 
 do_uninstall() {
+  local ans ans2
+
   echo "This will remove:"
   echo "  $SHARE_DIR"
   echo "  $BIN_DIR/rl_discord_rpc (symlink)"
   echo "  $BIN_DIR/rl_rpc_wrapper (symlink)"
-  ask ans "Are you sure? [y/N]: " "N"
-  if [[ ! "${ans:-N}" =~ ^[Yy]$ ]]; then
+  prompt ans "Are you sure? [y/N]: " "N"
+  if [[ ! "$ans" =~ ^[Yy]$ ]]; then
     echo "Cancelled."
     return
   fi
@@ -235,8 +233,8 @@ do_uninstall() {
   echo "> Removing symlinks ..."
   rm -f "$BIN_DIR/rl_discord_rpc" "$BIN_DIR/rl_rpc_wrapper"
 
-  ask ans2 "Also delete your config.json (Discord ID / Tracker username)? [y/N]: " "N"
-  if [[ "${ans2:-N}" =~ ^[Yy]$ ]]; then
+  prompt ans2 "Also delete your config.json (Discord ID / Tracker username)? [y/N]: " "N"
+  if [[ "$ans2" =~ ^[Yy]$ ]]; then
     echo "> Removing $SHARE_DIR entirely ..."
     rm -rf "$SHARE_DIR"
   else
@@ -250,21 +248,15 @@ do_uninstall() {
 }
 
 show_menu() {
+  local choice
+
   echo "rl_discord_rpc manager"
   echo "------/ by @noxygalaxy"
   echo "1) Install / Update"
   echo "2) Configure"
   echo "3) Uninstall"
   echo "4) Quit"
-
-  if [ "$HAS_TTY" -eq 0 ]; then
-    echo ""
-    echo "No terminal detected -- defaulting to Install."
-    do_install
-    return
-  fi
-
-  read -rp "Choose an option [1-4]: " choice
+  prompt choice "Choose an option [1-4]: " "1"
   case "$choice" in
     1) do_install ;;
     2) do_configure ;;
