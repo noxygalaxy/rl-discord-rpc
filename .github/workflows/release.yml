@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - name: Package
+        run: |
+          mkdir -p package
+          cp target/release/rl_discord_rpc package/
+          cp target/release/rl_rpc_wrapper package/
+          cat > package/config.json <<'EOF'
+          {
+            "discord_client_id": "1540801470503329932",
+            "tracker_platform": "epic",
+            "tracker_username": "",
+            "stats_api_port": 49123
+          }
+          EOF
+          tar -czf rl_discord_rpc-linux-x86_64.tar.gz -C package .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: rl_discord_rpc-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package -Force
+          Copy-Item target/release/rl_discord_rpc.exe package/
+          Copy-Item target/release/rl_rpc_wrapper.exe package/
+          @'
+          {
+            "discord_client_id": "1540801470503329932",
+            "tracker_platform": "epic",
+            "tracker_username": "",
+            "stats_api_port": 49123
+          }
+          '@ | Out-File -Encoding utf8 package/config.json
+          Compress-Archive -Path package/* -DestinationPath rl_discord_rpc-windows-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: rl_discord_rpc-windows-x86_64.zip
+
+  publish:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            rl_discord_rpc-linux-x86_64.tar.gz
+            rl_discord_rpc-windows-x86_64.zip
